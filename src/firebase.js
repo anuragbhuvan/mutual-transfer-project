@@ -6,13 +6,15 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  setPersistence,
+  browserLocalPersistence
 } from 'firebase/auth';
 import { 
   getFirestore, 
   doc, 
-  setDoc, 
-  serverTimestamp 
+  setDoc,
+  enableIndexedDbPersistence
 } from 'firebase/firestore';
 
 // Your web app's Firebase configuration
@@ -30,6 +32,18 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+// Enable persistence
+setPersistence(auth, browserLocalPersistence)
+  .catch((error) => {
+    console.error("Auth persistence error:", error);
+  });
+
+// Enable offline persistence for Firestore
+enableIndexedDbPersistence(db)
+  .catch((error) => {
+    console.error("Firestore persistence error:", error);
+  });
+
 // Export auth and db instances
 export { auth, db };
 
@@ -41,6 +55,5 @@ export {
   GoogleAuthProvider,
   signInWithPopup,
   doc,
-  setDoc,
-  serverTimestamp
+  setDoc
 }; 
