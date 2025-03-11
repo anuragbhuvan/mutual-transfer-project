@@ -1,6 +1,8 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router } from 'react-router-dom';
-import Auth from './components/Auth';
+
+// Lazy load Auth component
+const Auth = lazy(() => import('./components/Auth'));
 
 function App() {
   return (
