@@ -1,14 +1,10 @@
 import { useState } from 'react';
-import { auth } from '../firebase';
+import { auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, doc, setDoc } from '../firebase';
 import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword,
   sendPasswordResetEmail,
-  GoogleAuthProvider,
   signInWithPopup
 } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
+import { serverTimestamp } from 'firebase/firestore';
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -60,75 +56,30 @@ const Auth = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
     setErrors({});
     setSuccess('');
 
-    // Validate form
-    if (!validateForm()) return;
-
-    setLoading(true);
-
     try {
       if (isLogin) {
-        const userCredential = await signInWithEmailAndPassword(
-          auth,
-          formData.email,
-          formData.password
-        );
-        setSuccess('Login successful!');
-        
-        // Update last login
-        await setDoc(doc(db, 'users', userCredential.user.uid), {
-          lastLogin: serverTimestamp()
-        }, { merge: true });
-        
+        // Login
+        const { user } = await signInWithEmailAndPassword(auth, formData.email, formData.password);
+        setSuccess('Successfully logged in!');
       } else {
-        const userCredential = await createUserWithEmailAndPassword(
-          auth,
-          formData.email,
-          formData.password
-        );
+        // Register
+        const { user } = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
         
-        await setDoc(doc(db, 'users', userCredential.user.uid), {
+        // Create user document in Firestore
+        await setDoc(doc(db, 'users', user.uid), {
           name: formData.name,
           email: formData.email,
-          createdAt: serverTimestamp(),
-          lastLogin: serverTimestamp()
+          createdAt: new Date(),
         });
         
-        setSuccess('Registration successful!');
+        setSuccess('Account created successfully!');
       }
-
-      // Clear form data after success
-      setFormData({
-        name: '',
-        email: '',
-        password: '',
-        confirmPassword: '',
-      });
-      
     } catch (err) {
-      let errorMessage = 'An error occurred';
-      
-      switch (err.code) {
-        case 'auth/email-already-in-use':
-          setErrors({ email: 'This email is already registered' });
-          break;
-        case 'auth/invalid-email':
-          setErrors({ email: 'Invalid email address' });
-          break;
-        case 'auth/weak-password':
-          setErrors({ password: 'Password should be at least 6 characters' });
-          break;
-        case 'auth/user-not-found':
-          setErrors({ email: 'No account found with this email' });
-          break;
-        case 'auth/wrong-password':
-          setErrors({ password: 'Incorrect password' });
-          break;
-        default:
-          setErrors({ general: err.message });
-      }
+      setErrors({ general: err.message });
     } finally {
       setLoading(false);
     }
@@ -171,20 +122,23 @@ const Auth = () => {
   // Google Sign In
   const handleGoogleSignIn = async () => {
     try {
+      setLoading(true);
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
+      const { user } = await signInWithPopup(auth, provider);
       
-      // Store user data in Firestore
-      await setDoc(doc(db, 'users', result.user.uid), {
-        name: result.user.displayName,
-        email: result.user.email,
-        photoURL: result.user.photoURL,
-        lastLogin: serverTimestamp()
+      // Create/Update user document in Firestore
+      await setDoc(doc(db, 'users', user.uid), {
+        name: user.displayName,
+        email: user.email,
+        photoURL: user.photoURL,
+        lastLogin: new Date(),
       }, { merge: true });
-
-      setSuccess('Successfully signed in with Google!');
+      
+      setSuccess('Successfully logged in with Google!');
     } catch (err) {
       setErrors({ general: 'Failed to sign in with Google' });
+    } finally {
+      setLoading(false);
     }
   };
 
