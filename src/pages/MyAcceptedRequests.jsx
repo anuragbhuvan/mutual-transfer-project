@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, deleteDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
-import { FaCheck, FaEnvelope, FaSpinner, FaExchangeAlt, FaUserFriends } from 'react-icons/fa';
+import { FaCheck, FaEnvelope, FaSpinner, FaExchangeAlt, FaUserFriends, FaUndo } from 'react-icons/fa';
 import { useAuth } from '../firebase/AuthProvider';
 
 const MyAcceptedRequests = () => {
   const [acceptedRequests, setAcceptedRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const { currentUser } = useAuth();
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [processingRequest, setProcessingRequest] = useState(null);
 
   // Fetch accepted requests
   useEffect(() => {
@@ -20,6 +22,8 @@ const MyAcceptedRequests = () => {
       setError('');
       
       try {
+        console.log("Fetching accepted requests for user:", currentUser.uid);
+        
         // Query the acceptedRequests collection
         const q = query(
           collection(db, 'acceptedRequests'),
@@ -27,6 +31,8 @@ const MyAcceptedRequests = () => {
         );
         
         const querySnapshot = await getDocs(q);
+        console.log("Found accepted requests:", querySnapshot.size);
+        
         const requestsData = [];
         
         for (const reqDoc of querySnapshot.docs) {
@@ -76,6 +82,49 @@ const MyAcceptedRequests = () => {
     fetchAcceptedRequests();
   }, [currentUser]);
   
+  // Handle undoing an accepted request
+  const handleUndo = async (request) => {
+    if (!currentUser) return;
+    
+    setProcessingRequest(request.id);
+    setError('');
+    setSuccess('');
+    
+    try {
+      // 1. Update the original notification back to pending
+      if (request.notificationId) {
+        await updateDoc(doc(db, 'notifications', request.notificationId), {
+          status: 'pending',
+          respondedAt: null
+        });
+      }
+      
+      // 2. Delete from acceptedRequests collection
+      await deleteDoc(doc(db, 'acceptedRequests', request.id));
+      
+      // 3. Create a notification for the sender
+      await addDoc(collection(db, 'notifications'), {
+        toUserId: request.senderId,
+        fromUserId: currentUser.uid,
+        message: 'Your request has been returned to pending status',
+        status: 'info',
+        timestamp: serverTimestamp(),
+        isRead: false
+      });
+      
+      // 4. Update local state
+      setAcceptedRequests(acceptedRequests.filter(req => req.id !== request.id));
+      
+      setSuccess('Request has been returned to pending status');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      console.error('Error undoing request:', err);
+      setError('Failed to undo this request: ' + err.message);
+    } finally {
+      setProcessingRequest(null);
+    }
+  };
+  
   // Format date
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString('en-US', {
@@ -100,6 +149,12 @@ const MyAcceptedRequests = () => {
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
           {error}
+        </div>
+      )}
+      
+      {success && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+          {success}
         </div>
       )}
       
@@ -163,7 +218,20 @@ const MyAcceptedRequests = () => {
                 )}
               </div>
               
-              <div className="mt-2 text-right">
+              <div className="flex justify-between items-center">
+                <button
+                  onClick={() => handleUndo(request)}
+                  disabled={processingRequest === request.id}
+                  className="flex items-center py-1.5 px-3 bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition-colors"
+                >
+                  {processingRequest === request.id ? (
+                    <FaSpinner className="animate-spin mr-1" />
+                  ) : (
+                    <FaUndo className="mr-1" />
+                  )}
+                  Undo
+                </button>
+                
                 <button 
                   onClick={() => setSelectedRequest(selectedRequest === request.id ? null : request.id)}
                   className="text-indigo-600 hover:text-indigo-800 flex items-center text-sm ml-auto"

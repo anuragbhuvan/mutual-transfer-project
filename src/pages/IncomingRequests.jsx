@@ -1,8 +1,109 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, doc, getDoc, updateDoc, serverTimestamp, addDoc, deleteDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
-import { FaCheck, FaTimes, FaEnvelope, FaEnvelopeOpen, FaBan, FaExchangeAlt, FaUserFriends, FaSpinner } from 'react-icons/fa';
+import { FaCheck, FaTimes, FaEnvelope, FaEnvelopeOpen, FaBan, FaExchangeAlt, FaUserFriends, FaSpinner, FaTrash, FaExclamationTriangle } from 'react-icons/fa';
 import { useAuth } from '../firebase/AuthProvider';
+import { createPortal } from 'react-dom';
+
+const DeleteConfirmationModal = ({ isOpen, onClose, onConfirm, isDeleting }) => {
+  if (!isOpen) return null;
+  
+  return createPortal(
+    <div className="modal-overlay animate-fade-in" onClick={onClose}>
+      <div 
+        className="warning-popup animate-popup"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center mb-4 text-red-500">
+          <FaExclamationTriangle className="mr-2 text-xl" />
+          <h3 className="text-lg font-bold">Confirm Deletion</h3>
+        </div>
+        
+        <p className="mb-4 text-gray-700">
+          Are you sure you want to permanently delete this request? This action cannot be undone.
+        </p>
+        
+        <div className="flex justify-end space-x-3 mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors"
+            disabled={isDeleting}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors flex items-center"
+            disabled={isDeleting}
+          >
+            {isDeleting ? (
+              <>
+                <FaSpinner className="animate-spin mr-2" />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <FaTrash className="mr-2" />
+                Yes, Delete
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+const AcceptConfirmationModal = ({ isOpen, onClose, onConfirm, isProcessing, request }) => {
+  if (!isOpen || !request) return null;
+  
+  return createPortal(
+    <div className="modal-overlay animate-fade-in" onClick={onClose}>
+      <div 
+        className="warning-popup animate-popup"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center mb-4 text-green-500">
+          <FaCheck className="mr-2 text-xl" />
+          <h3 className="text-lg font-bold">Confirm Acceptance</h3>
+        </div>
+        
+        <p className="mb-4 text-gray-700">
+          Are you sure you want to accept this transfer request from {request.fromUserName || 'this user'}? This will notify the sender and create a connection between you.
+        </p>
+        
+        <div className="flex justify-end space-x-3 mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors"
+            disabled={isProcessing}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors flex items-center"
+            disabled={isProcessing}
+          >
+            {isProcessing ? (
+              <>
+                <FaSpinner className="animate-spin mr-2" />
+                Processing...
+              </>
+            ) : (
+              <>
+                <FaCheck className="mr-2" />
+                Yes, Accept
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
 
 const IncomingRequests = () => {
   const [requests, setRequests] = useState([]);
@@ -12,6 +113,9 @@ const IncomingRequests = () => {
   const [showRequestDetails, setShowRequestDetails] = useState(null);
   const { currentUser, isAuthenticated } = useAuth();
   const [processingRequest, setProcessingRequest] = useState(null);
+  const [deletingRequest, setDeletingRequest] = useState(null);
+  const [requestToDelete, setRequestToDelete] = useState(null);
+  const [requestToAccept, setRequestToAccept] = useState(null);
   
   useEffect(() => {
     const fetchIncomingRequests = async () => {
@@ -140,6 +244,23 @@ const IncomingRequests = () => {
       
       await addDoc(collection(db, 'notifications'), responseNotification);
       
+      // Create a document in acceptedRequests collection
+      await addDoc(collection(db, 'acceptedRequests'), {
+        senderId: notification.fromUserId,
+        receiverId: currentUser.uid,
+        notificationId: notification.id,
+        requestId: notification.fromTransferRequestId,
+        requestType: notification.type === 'chain_request' ? 'chain' : 'one-to-one',
+        createdAt: serverTimestamp()
+      });
+      
+      console.log("Created acceptedRequests document with:", {
+        senderId: notification.fromUserId,
+        receiverId: currentUser.uid,
+        notificationId: notification.id,
+        requestId: notification.fromTransferRequestId
+      });
+      
       // Update local state
       setRequests(prev => 
         prev.map(req => 
@@ -161,6 +282,7 @@ const IncomingRequests = () => {
       setTimeout(() => setError(''), 3000);
     } finally {
       setProcessingRequest(null);
+      setRequestToAccept(null);
     }
   };
   
@@ -328,6 +450,36 @@ const IncomingRequests = () => {
   const pendingRequests = requests.filter(req => req.status === 'pending');
   const respondedRequests = requests.filter(req => req.status !== 'pending');
   
+  // Handle permanent deletion of a request
+  const handleDelete = async (request) => {
+    setDeletingRequest(request.id);
+    
+    try {
+      if (!currentUser) {
+        setError('You must be logged in to delete requests');
+        return;
+      }
+      
+      // Delete the notification
+      await deleteDoc(doc(db, 'notifications', request.id));
+      
+      // Update local state
+      setRequests(prev => prev.filter(req => req.id !== request.id));
+      
+      setSuccess('Request has been permanently deleted');
+      // Hide success message after 3 seconds
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      console.error('Error deleting request:', err);
+      setError('Failed to delete request. Please try again.');
+      // Hide error message after 3 seconds
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setDeletingRequest(null);
+      setRequestToDelete(null);
+    }
+  };
+  
   if (loading) {
     return (
       <div className="p-6 bg-white rounded-lg shadow-md">
@@ -357,6 +509,21 @@ const IncomingRequests = () => {
   
   return (
     <div className="w-full">
+      <DeleteConfirmationModal 
+        isOpen={requestToDelete !== null}
+        onClose={() => setRequestToDelete(null)}
+        onConfirm={() => handleDelete(requestToDelete)}
+        isDeleting={deletingRequest !== null}
+      />
+      
+      <AcceptConfirmationModal
+        isOpen={requestToAccept !== null}
+        onClose={() => setRequestToAccept(null)}
+        onConfirm={() => handleAccept(requestToAccept)}
+        isProcessing={processingRequest !== null}
+        request={requestToAccept}
+      />
+      
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-800">Incoming Requests</h2>
@@ -429,7 +596,7 @@ const IncomingRequests = () => {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleAccept(request);
+                                  setRequestToAccept(request);
                                 }}
                                 disabled={processingRequest === request.id}
                                 className="p-1.5 bg-green-100 text-green-600 rounded hover:bg-green-200 flex items-center"
@@ -473,6 +640,22 @@ const IncomingRequests = () => {
                                   <FaBan size={14} className="mr-1" />
                                 )}
                                 Block
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setRequestToDelete(request);
+                                }}
+                                disabled={deletingRequest === request.id}
+                                className="p-1.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 flex items-center"
+                                title="Delete Permanently"
+                              >
+                                {deletingRequest === request.id ? (
+                                  <FaSpinner className="animate-spin mr-1" />
+                                ) : (
+                                  <FaTrash size={14} className="mr-1" />
+                                )}
+                                Delete
                               </button>
                             </div>
                           </div>
@@ -543,6 +726,25 @@ const IncomingRequests = () => {
                                   </span>
                                 </div>
                               </div>
+                            </div>
+                            
+                            <div className="relative">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setRequestToDelete(request);
+                                }}
+                                disabled={deletingRequest === request.id}
+                                className="p-1.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 flex items-center"
+                                title="Delete Permanently"
+                              >
+                                {deletingRequest === request.id ? (
+                                  <FaSpinner className="animate-spin mr-1" />
+                                ) : (
+                                  <FaTrash size={14} className="mr-1" />
+                                )}
+                                Delete
+                              </button>
                             </div>
                           </div>
                         </div>

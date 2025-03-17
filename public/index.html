@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0050A0" />
+  <meta
+    name="description"
+    content="Indian Rapid Mutual Transfer - The one-stop platform for railway employees to find mutual transfer partners quickly and efficiently"
+  />
+  <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+  <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <title>Indian Rapid Mutual Transfer</title>
+  <style>
+    /* Preload styles to prevent layout shifts */
+    body {
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f9fafb;
+    }
+    
+    .loading-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background-color: #ffffff;
+    }
+    
+    .loading-logo {
+      width: 80px;
+      height: 80px;
+      border-radius: 12px;
+      margin-bottom: 24px;
+      background: linear-gradient(135deg, #FF9933 0%, #FFFFFF 50%, #138808 100%);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .loading-logo::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background-color: #000080;
+      border: 2px solid #FFFFFF;
+    }
+    
+    .loading-text {
+      font-size: 16px;
+      font-weight: 500;
+      color: #0050A0;
+      margin-bottom: 16px;
+    }
+    
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(0, 80, 160, 0.2);
+      border-radius: 50%;
+      border-top-color: #0050A0;
+      animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+</head>
+<body>
+  <noscript>You need to enable JavaScript to run this app.</noscript>
+  <div id="root">
+    <div class="loading-screen">
+      <div class="loading-logo"></div>
+      <div class="loading-text">Indian Rapid Mutual Transfer</div>
+      <div class="loading-spinner"></div>
+    </div>
+  </div>
+</body>
+</html> 

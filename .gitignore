@@ -30,4 +30,7 @@ yarn-error.log*
 *.ntvs*
 *.njsproj
 *.sln
-*.sw? 
+*.sw?
+
+# Google Cloud credentials
+serviceAccountKey.json 

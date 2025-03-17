@@ -9,7 +9,8 @@ import {
   signInWithPopup,
   onAuthStateChanged,
   browserLocalPersistence,
-  setPersistence
+  setPersistence,
+  inMemoryPersistence
 } from 'firebase/auth';
 import { 
   getFirestore,
@@ -17,8 +18,11 @@ import {
   setDoc,
   collection,
   getDocs,
-  serverTimestamp
+  serverTimestamp,
+  getDoc,
+  connectFirestoreEmulator
 } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional

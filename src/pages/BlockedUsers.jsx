@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, deleteDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
-import { FaBan, FaUnlock, FaInfoCircle, FaUser, FaSpinner, FaUserSlash } from 'react-icons/fa';
+import { FaBan, FaUnlock, FaInfoCircle, FaUser, FaSpinner, FaUserSlash, FaUndo } from 'react-icons/fa';
 import { useAuth } from '../firebase/AuthProvider';
 
 const BlockedUsers = () => {
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [unblockingUser, setUnblockingUser] = useState(null);
+  const [processingRequest, setProcessingRequest] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const { currentUser, isAuthenticated } = useAuth();
@@ -85,6 +86,59 @@ const BlockedUsers = () => {
       setError("Problem unblocking user: " + err.message);
     } finally {
       setUnblockingUser(null);
+    }
+  };
+  
+  // Handle undoing block and moving back to incoming requests
+  const handleUndo = async (user) => {
+    setProcessingRequest(user.id);
+    setError("");
+    setSuccess("");
+    
+    try {
+      // 1. Find any rejected notifications from this user
+      const notificationsQuery = query(
+        collection(db, "notifications"),
+        where("fromUserId", "==", user.blockedId),
+        where("toUserId", "==", currentUser.uid),
+        where("status", "==", "blocked")
+      );
+      
+      const notificationsSnapshot = await getDocs(notificationsQuery);
+      
+      // 2. Update these notifications back to pending
+      const updatePromises = notificationsSnapshot.docs.map(doc => 
+        updateDoc(doc.ref, {
+          status: 'pending',
+          respondedAt: null
+        })
+      );
+      
+      await Promise.all(updatePromises);
+      
+      // 3. Delete from blockedUsers collection
+      await deleteDoc(doc(db, "blockedUsers", user.id));
+      
+      // 4. Notify the user
+      await addDoc(collection(db, 'notifications'), {
+        toUserId: user.blockedId,
+        fromUserId: currentUser.uid,
+        message: 'You are now unblocked and can send transfer requests',
+        status: 'info',
+        timestamp: serverTimestamp(),
+        isRead: false
+      });
+      
+      // 5. Update local state
+      setBlockedUsers(blockedUsers.filter(u => u.id !== user.id));
+      
+      setSuccess("User has been unblocked and requests moved to incoming");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Error undoing block:", err);
+      setError("Problem undoing block: " + err.message);
+    } finally {
+      setProcessingRequest(null);
     }
   };
   
@@ -195,18 +249,33 @@ const BlockedUsers = () => {
                   <span>You won't receive any transfer requests from this user</span>
                 </div>
                 
-                <button
-                  onClick={() => handleUnblock(user.id, user.blockedId)}
-                  disabled={unblockingUser === user.id}
-                  className="flex items-center px-3 py-1.5 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors disabled:opacity-50"
-                >
-                  {unblockingUser === user.id ? (
-                    <FaSpinner className="animate-spin mr-1" />
-                  ) : (
-                    <FaUnlock className="mr-1" />
-                  )}
-                  Unblock
-                </button>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => handleUndo(user)}
+                    disabled={processingRequest === user.id}
+                    className="flex items-center px-3 py-1.5 bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition-colors disabled:opacity-50"
+                  >
+                    {processingRequest === user.id ? (
+                      <FaSpinner className="animate-spin mr-1" />
+                    ) : (
+                      <FaUndo className="mr-1" />
+                    )}
+                    Undo
+                  </button>
+                
+                  <button
+                    onClick={() => handleUnblock(user.id, user.blockedId)}
+                    disabled={unblockingUser === user.id}
+                    className="flex items-center px-3 py-1.5 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors disabled:opacity-50"
+                  >
+                    {unblockingUser === user.id ? (
+                      <FaSpinner className="animate-spin mr-1" />
+                    ) : (
+                      <FaUnlock className="mr-1" />
+                    )}
+                    Unblock
+                  </button>
+                </div>
               </div>
             </div>
           ))}
