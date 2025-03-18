@@ -20,9 +20,11 @@ import {
   getDocs,
   serverTimestamp,
   getDoc,
-  connectFirestoreEmulator
+  connectFirestoreEmulator,
+  addDoc
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { Timestamp } from 'firebase/firestore';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -143,6 +145,108 @@ const signInWithGoogle = async () => {
       throw new Error('Sign-in cancelled by user');
     }
     console.error('Error during Google sign-in:', error);
+    throw error;
+  }
+};
+
+// Function to create a notification
+export const createNotification = async (toUserId, fromUserId, message, type, fromTransferRequestId = null) => {
+  try {
+    const notificationRef = collection(db, 'notifications');
+    const notification = {
+      toUserId,
+      fromUserId,
+      message,
+      type,
+      fromTransferRequestId,
+      status: 'pending',
+      createdAt: serverTimestamp(),
+      readAt: null // Add readAt field
+    };
+    
+    await addDoc(notificationRef, notification);
+    return true;
+  } catch (error) {
+    console.error('Error creating notification:', error);
+    return false;
+  }
+};
+
+// Function to check and update user action limits
+export const checkAndUpdateActionLimit = async (userId, actionType) => {
+  try {
+    const userLimitsRef = doc(db, 'userActionLimits', userId);
+    const now = Timestamp.now();
+    const yesterday = new Timestamp(now.seconds - 86400, now.nanoseconds);
+
+    // Get current limits
+    const limitsDoc = await getDoc(userLimitsRef);
+    const currentLimits = limitsDoc.exists() ? limitsDoc.data() : {
+      editCount: 0,
+      deleteCount: 0,
+      createCount: 0,
+      lastReset: now
+    };
+
+    // Reset counts if 24 hours have passed
+    if (currentLimits.lastReset.seconds < yesterday.seconds) {
+      currentLimits.editCount = 0;
+      currentLimits.deleteCount = 0;
+      currentLimits.createCount = 0;
+      currentLimits.lastReset = now;
+    }
+
+    // Check limits
+    const limitReached = {
+      edit: currentLimits.editCount >= 2,
+      delete: currentLimits.deleteCount >= 2,
+      create: currentLimits.createCount >= 2
+    };
+
+    // If limit not reached, increment counter
+    if (!limitReached[actionType]) {
+      currentLimits[`${actionType}Count`]++;
+      await setDoc(userLimitsRef, currentLimits);
+      return {
+        allowed: true,
+        remainingCount: 2 - currentLimits[`${actionType}Count`]
+      };
+    }
+
+    return {
+      allowed: false,
+      remainingCount: 0
+    };
+  } catch (error) {
+    console.error('Error checking action limits:', error);
+    throw error;
+  }
+};
+
+// Function to get remaining limits
+export const getRemainingLimits = async (userId) => {
+  try {
+    const userLimitsRef = doc(db, 'userActionLimits', userId);
+    const limitsDoc = await getDoc(userLimitsRef);
+    const now = Timestamp.now();
+    const yesterday = new Timestamp(now.seconds - 86400, now.nanoseconds);
+
+    if (!limitsDoc.exists() || limitsDoc.data().lastReset.seconds < yesterday.seconds) {
+      return {
+        edit: 2,
+        delete: 2,
+        create: 2
+      };
+    }
+
+    const limits = limitsDoc.data();
+    return {
+      edit: 2 - (limits.editCount || 0),
+      delete: 2 - (limits.deleteCount || 0),
+      create: 2 - (limits.createCount || 0)
+    };
+  } catch (error) {
+    console.error('Error getting remaining limits:', error);
     throw error;
   }
 };

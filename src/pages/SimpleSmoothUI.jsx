@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { FaHome, FaUser, FaBell, FaSignOutAlt, FaEdit, FaTrash, FaSearch, FaExchangeAlt, FaUserFriends, FaHeadset, FaCheckCircle, FaBan, FaTimesCircle, FaCheck, FaUserEdit, FaCog, FaChevronDown, FaMapMarkerAlt, FaArrowRight } from "react-icons/fa";
+import { FaHome, FaUser, FaBell, FaSignOutAlt, FaEdit, FaTrash, FaSearch, FaExchangeAlt, FaUserFriends, FaHeadset, FaCheckCircle, FaBan, FaTimesCircle, FaCheck, FaUserEdit, FaCog, FaChevronDown, FaMapMarkerAlt, FaArrowRight, FaShare, FaUserTie } from "react-icons/fa";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import { db, auth } from "../firebase/config";
 import { useAuth } from "../firebase/AuthProvider";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
 
 // Import page components
 import Dashboard from "./Dashboard";
@@ -19,6 +19,27 @@ import AcceptedByOthers from "./AcceptedByOthers";
 import EmployeeForm from "./EmployeeForm";
 import Auth from "./Auth";
 import Profile from "./Profile";
+import RequestToAdmin from "./RequestToAdmin";
+import AdminPanel from './AdminPanel';
+
+// Helper Components
+const NavItem = ({ active, icon, text, onClick }) => {
+  return (
+    <button
+      className={`flex items-center w-full p-3 rounded-lg transition-all ${
+        active 
+          ? "bg-indigo-50 text-indigo-600 font-medium" 
+          : "text-gray-700 hover:bg-gray-100"
+      }`}
+      onClick={onClick}
+    >
+      <div className={`${active ? "text-indigo-600" : "text-gray-500"} flex-shrink-0 mr-3`}>
+        {icon}
+      </div>
+      <span className="whitespace-nowrap overflow-hidden text-ellipsis">{text}</span>
+    </button>
+  );
+};
 
 const SimpleSmoothUI = () => {
   const navigate = useNavigate();
@@ -29,6 +50,10 @@ const SimpleSmoothUI = () => {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [transferRequestData, setTransferRequestData] = useState(null);
   const [transferDataLoading, setTransferDataLoading] = useState(true);
+  const [userPost, setUserPost] = useState('');
+  const [userGrade, setUserGrade] = useState('');
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareText, setShareText] = useState('');
   
   // Check for activeSection in sessionStorage on component mount and when location changes
   useEffect(() => {
@@ -75,6 +100,26 @@ const SimpleSmoothUI = () => {
     
     fetchTransferRequestData();
   }, [currentUser]);
+
+  // Fetch user data
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!currentUser) return;
+      
+      try {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          setUserPost(userData.post || '');
+          setUserGrade(userData.grade || '');
+        }
+      } catch (err) {
+        console.error('Error fetching user data:', err);
+      }
+    };
+    
+    fetchUserData();
+  }, [currentUser]);
   
   // If still loading auth state, show loading indicator
   if (loading) {
@@ -97,6 +142,40 @@ const SimpleSmoothUI = () => {
     } catch (error) {
       console.error('Error logging out:', error);
     }
+  };
+
+  // Function to generate share text
+  const generateShareText = (request) => {
+    const text = `
+Transfer Request Details:
+Name: ${request.name}
+Post: ${request.post}
+Grade: ${request.grade}
+Current Location: ${request.currentLocation}
+Preferred Locations: ${request.preferredLocations.join(', ')}
+Reason: ${request.reason}
+Status: ${request.status}
+    `.trim();
+    setShareText(text);
+    setShowShareModal(true);
+  };
+
+  // Function to share via WhatsApp
+  const shareViaWhatsApp = () => {
+    const encodedText = encodeURIComponent(shareText);
+    window.open(`https://wa.me/?text=${encodedText}`, '_blank');
+  };
+
+  // Function to share via Telegram
+  const shareViaTelegram = () => {
+    const encodedText = encodeURIComponent(shareText);
+    window.open(`https://t.me/share/url?url=&text=${encodedText}`, '_blank');
+  };
+
+  // Function to copy to clipboard
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(shareText);
+    alert('Text copied to clipboard!');
   };
 
   // Sidebar menu items
@@ -127,38 +206,121 @@ const SimpleSmoothUI = () => {
     { id: "my-rejected-requests", name: "My Rejected Requests", icon: <FaTimesCircle className="w-5 h-5" /> },
     { id: "blocked-users", name: "Blocked Users", icon: <FaBan className="w-5 h-5" /> },
     { id: "accepted-by-others", name: "Accepted by Others", icon: <FaCheck className="w-5 h-5" /> },
+    { id: "request-to-admin", name: "Request to Admin", icon: <FaUserTie className="w-5 h-5" /> },
     { id: "profile-edit", name: "Edit Profile", icon: <FaUserEdit className="w-5 h-5" /> },
+    { id: "settings", name: "Settings", icon: <FaCog className="w-5 h-5" /> },
+    { id: "help", name: "Help & Support", icon: <FaHeadset className="w-5 h-5" /> },
+    { id: "admin-panel", name: "Admin Panel", icon: <FaUserTie className="w-5 h-5" /> },
+    { id: "logout", name: "Logout", icon: <FaSignOutAlt className="w-5 h-5" />, onClick: handleLogout }
   ];
 
   // Render page based on active tab
   const renderPage = () => {
+    console.log('Rendering page for activeTab:', activeTab);
+    const key = `${activeTab}-${Date.now()}`; // Add a unique key to force re-render
+    
     switch (activeTab) {
       case "dashboard":
-        return <Dashboard />;
+        return <Dashboard key={key} />;
       case "my-transfer-request":
-        return <MyTransferRequest />;
+        return <MyTransferRequest key={key} />;
       case "one-to-one-matches":
-        return <OneToOneMatches />;
+        return <OneToOneMatches key={key} />;
       case "chain-transfer-matches":
-        return <ChainTransferMatches />;
+        return <ChainTransferMatches key={key} />;
       case "incoming-requests":
-        return <IncomingRequests />;
+        return <IncomingRequests key={key} />;
       case "my-accepted-requests":
-        return <MyAcceptedRequests />;
+        return <MyAcceptedRequests key={key} />;
       case "my-rejected-requests":
-        return <MyRejectedRequests />;
+        return <MyRejectedRequests key={key} />;
       case "blocked-users":
-        return <BlockedUsers />;
+        return <BlockedUsers key={key} />;
       case "accepted-by-others":
-        return <AcceptedByOthers />;
+        return <AcceptedByOthers key={key} />;
       case "employee-form":
-        return <EmployeeForm />;
+        return <EmployeeForm key={key} />;
       case "profile-edit":
-        return <Profile />;
+        return <Profile key={key} />;
+      case "request-to-admin":
+        return <RequestToAdmin key={key} />;
+      case "admin-panel":
+        return <AdminPanel key={key} />;
       default:
-        return <div>Page not found</div>;
+        return <div key={key}>Page not found</div>;
     }
   };
+
+  // Add this inside the transfer request content section
+  const renderTransferRequestContent = () => (
+    <div className="space-y-6">
+      {/* ... existing transfer request content ... */}
+      
+      {/* Add share button in the actions section */}
+      <div className="flex justify-between items-center">
+        <div className="flex space-x-2">
+          <button
+            onClick={() => handleEdit(request)}
+            className="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => handleDelete(request.id)}
+            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => generateShareText(request)}
+            className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 flex items-center"
+          >
+            <FaShare className="mr-1" /> Share
+          </button>
+        </div>
+      </div>
+
+      {/* Share Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4">Share Transfer Request</h3>
+            <textarea
+              value={shareText}
+              readOnly
+              className="w-full h-32 p-2 border rounded mb-4"
+            />
+            <div className="flex space-x-2">
+              <button
+                onClick={shareViaWhatsApp}
+                className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              >
+                Share on WhatsApp
+              </button>
+              <button
+                onClick={shareViaTelegram}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Share on Telegram
+              </button>
+              <button
+                onClick={copyToClipboard}
+                className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              >
+                Copy Text
+              </button>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
@@ -188,7 +350,10 @@ const SimpleSmoothUI = () => {
                   <div className="bg-indigo-700 rounded-full h-8 w-8 flex items-center justify-center text-white">
                     {currentUser?.email?.charAt(0)?.toUpperCase() || 'A'}
                   </div>
-                  <span className="ml-2 text-white">{currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User'}</span>
+                  <div className="ml-2 text-left">
+                    <div className="text-white">{currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User'}</div>
+                    <div className="text-xs text-indigo-200">{userPost} • {userGrade}</div>
+                  </div>
                   <FaChevronDown className="ml-1 text-white text-xs" />
                 </button>
                 
@@ -260,7 +425,7 @@ const SimpleSmoothUI = () => {
                 </div>
                 <div>
                   <p className="font-medium text-gray-800">{currentUser?.displayName || currentUser?.email || 'User'}</p>
-                  <p className="text-sm text-gray-500">JE (Works) • 4200</p>
+                  <p className="text-sm text-gray-500">{userPost} • {userGrade}</p>
                 </div>
               </div>
               
@@ -272,7 +437,7 @@ const SimpleSmoothUI = () => {
                       active={activeTab === item.id} 
                       icon={item.icon} 
                       text={item.name} 
-                      onClick={() => setActiveTab(item.id)} 
+                      onClick={() => item.onClick ? item.onClick() : setActiveTab(item.id)} 
                     />
                     {item.hasDetails && activeTab === item.id && item.details}
                   </div>
@@ -290,25 +455,6 @@ const SimpleSmoothUI = () => {
         </div>
       </div>
     </div>
-  );
-};
-
-// Helper Components
-const NavItem = ({ active, icon, text, onClick }) => {
-  return (
-    <button
-      className={`flex items-center w-full p-3 rounded-lg transition-all ${
-        active 
-          ? "bg-indigo-50 text-indigo-600 font-medium" 
-          : "text-gray-700 hover:bg-gray-100"
-      }`}
-      onClick={onClick}
-    >
-      <div className={`${active ? "text-indigo-600" : "text-gray-500"} flex-shrink-0 mr-3`}>
-        {icon}
-      </div>
-      <span className="whitespace-nowrap overflow-hidden text-ellipsis">{text}</span>
-    </button>
   );
 };
 

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { auth, db } from '../firebase/config';
+import { doc, getDoc } from 'firebase/firestore';
 
 const Sidebar = ({ onNavigate }) => {
   const location = useLocation();
@@ -9,6 +11,25 @@ const Sidebar = ({ onNavigate }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   // Track screen size
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [userPost, setUserPost] = useState('');
+  const [userGrade, setUserGrade] = useState('');
+  
+  // Fetch user data
+  useEffect(() => {
+    const fetchUserData = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          setUserPost(userData.post || '');
+          setUserGrade(userData.grade || '');
+        }
+      }
+    };
+    
+    fetchUserData();
+  }, []);
   
   // Add effect to track window resize
   useEffect(() => {
@@ -273,11 +294,11 @@ const Sidebar = ({ onNavigate }) => {
 
   return (
     <div className={`sidebar-container bg-[#5A4AE3] h-full border-r border-indigo-700 ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
-      {/* Toggle button for mobile */}
+      {/* Mobile toggle button */}
       {isMobile && (
         <button 
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="md:hidden fixed right-4 top-20 z-50 bg-white p-2 rounded-full shadow-lg border border-gray-200"
+          className="md:hidden fixed right-4 top-4 z-50 bg-white p-2 rounded-full shadow-lg border border-gray-200"
         >
           <svg className="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             {isMobileMenuOpen ? (
@@ -297,6 +318,23 @@ const Sidebar = ({ onNavigate }) => {
             <div className="text-center">
               <h2 className="text-xl font-bold text-white">Indian Rapid</h2>
               <p className="text-sm text-indigo-200">Mutual Transfer</p>
+            </div>
+          </div>
+
+          {/* User Info Section - Above Dashboard */}
+          <div className="p-4 border-b border-indigo-600">
+            <div className="flex flex-col">
+              <div className="flex items-center mb-2">
+                <svg className="w-5 h-5 text-white mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <p className="text-sm font-medium text-white truncate">
+                  {auth.currentUser?.displayName || 'User'}
+                </p>
+              </div>
+              <p className="text-xs text-indigo-200 ml-7">
+                {userPost} {userGrade}
+              </p>
             </div>
           </div>
           

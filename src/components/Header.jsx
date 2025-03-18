@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { auth, db, isFirebaseReady } from '../firebase/config';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, getDocs, orderBy, limit, getDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, limit, getDoc, doc, updateDoc, Timestamp } from 'firebase/firestore';
 
 const Header = () => {
   const navigate = useNavigate();
@@ -18,6 +18,7 @@ const Header = () => {
   const [loading, setLoading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const userMenuRef = useRef(null);
+  const [readNotifications, setReadNotifications] = useState(new Set());
 
   useEffect(() => {
     // Set up auth state listener
@@ -86,13 +87,22 @@ const Header = () => {
         // Process notifications
         const notificationsData = [];
         let latestNotificationsByUser = {};
+        let unreadCount = 0;
         
         snapshot.forEach((doc) => {
-          const notificationData = { id: doc.id, ...doc.data() };
+          const notificationData = { 
+            id: doc.id, 
+            ...doc.data(),
+            isRead: doc.data().readAt !== null
+          };
           
           // Skip notifications that are marked as no_longer_matching
           if (notificationData.status === 'no_longer_matching') {
             return;
+          }
+          
+          if (!notificationData.isRead) {
+            unreadCount++;
           }
           
           // Rest of your processing code
@@ -223,8 +233,9 @@ const Header = () => {
           notification => notification.matchStatus === 'matching' || notification.matchStatus === 'updated'
         ).length;
         
-        setPendingNotifications(pendingCount);
+        setPendingNotifications(unreadCount);
         setNotificationsList(filteredNotifications);
+        setHasNewNotification(unreadCount > 0);
         console.log('Notifications updated:', filteredNotifications);
       } catch (error) {
         console.error('Error fetching notifications:', error);
@@ -280,15 +291,47 @@ const Header = () => {
     }
   };
   
-  const handleNotificationItemClick = () => {
-    setShowNotifications(false);
+  const handleNotificationItemClick = async (notification) => {
+    if (!notification.isRead) {
+      await markNotificationAsRead(notification.id);
+    }
     
-    // Navigate to dashboard with notifications open
-    if (window.location.pathname === '/dashboard') {
-      sessionStorage.setItem('openNotifications', 'true');
-      window.location.href = '/dashboard?openNotifications=true';
-    } else {
-      navigate('/dashboard?openNotifications=true');
+    // Navigate based on notification type
+    if (notification.type === 'incoming_request') {
+      navigate('/incoming-requests');
+    } else if (notification.type === 'chain_match' || notification.type === 'one_to_one_match') {
+      navigate('/matches');
+    }
+    
+    setShowNotifications(false);
+  };
+
+  // Add function to mark notification as read
+  const markNotificationAsRead = async (notificationId) => {
+    try {
+      const notificationRef = doc(db, 'notifications', notificationId);
+      await updateDoc(notificationRef, {
+        readAt: Timestamp.now()
+      });
+      
+      // Update local state
+      setNotificationsList(prev => 
+        prev.map(notification => 
+          notification.id === notificationId 
+            ? { ...notification, isRead: true }
+            : notification
+        )
+      );
+      
+      // Update unread count
+      setPendingNotifications(prev => Math.max(0, prev - 1));
+      
+      // If no more unread notifications, remove the new notification indicator
+      if (pendingNotifications <= 1) {
+        setHasNewNotification(false);
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
     }
   };
 
@@ -369,7 +412,33 @@ const Header = () => {
                           <h3 className="text-sm font-medium text-gray-700">Notifications</h3>
                         </div>
                         <div className="max-h-96 overflow-y-auto">
-                          {/* Keep your existing notification items code */}
+                          {notificationsList.length === 0 ? (
+                            <p className="text-gray-500 text-center py-4">No notifications</p>
+                          ) : (
+                            notificationsList.map((notification) => (
+                              <div
+                                key={notification.id}
+                                onClick={() => handleNotificationItemClick(notification)}
+                                className={`p-3 mb-2 rounded-lg cursor-pointer transition-colors ${
+                                  notification.isRead ? 'bg-gray-50' : 'bg-blue-50 hover:bg-blue-100'
+                                }`}
+                              >
+                                <div className="flex items-start">
+                                  <div className="flex-1">
+                                    <p className={`text-sm ${notification.isRead ? 'text-gray-600' : 'text-black font-semibold'}`}>
+                                      {notification.message}
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                      {new Date(notification.createdAt?.toDate()).toLocaleString()}
+                                    </p>
+                                  </div>
+                                  {!notification.isRead && (
+                                    <span className="w-2 h-2 bg-blue-600 rounded-full mt-2"></span>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
                         </div>
                       </div>
                     </div>

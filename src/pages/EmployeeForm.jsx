@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, addDoc, doc, updateDoc, query, where, getDocs, writeBatch } from 'firebase/firestore';
-import { db, auth } from '../firebase/config';
+import { db, auth, checkAndUpdateActionLimit, getRemainingLimits } from '../firebase/config';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 // Railway Zones and Divisions data
@@ -268,6 +268,9 @@ const EmployeeForm = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showLimitWarning, setShowLimitWarning] = useState(false);
+  const [limitWarningMessage, setLimitWarningMessage] = useState('');
+  const [remainingCreates, setRemainingCreates] = useState(2);
 
   // Make sure form data is properly loaded in edit mode
   useEffect(() => {
@@ -276,6 +279,16 @@ const EmployeeForm = () => {
       setFormData(location.state.requestData);
     }
   }, [editMode, location.state]);
+
+  useEffect(() => {
+    const fetchLimits = async () => {
+      if (auth.currentUser) {
+        const limits = await getRemainingLimits(auth.currentUser.uid);
+        setRemainingCreates(limits.create);
+      }
+    };
+    fetchLimits();
+  }, []);
 
   // Memoize expensive computations
   const getDivisions = useMemo(() => (zone) => {
@@ -411,12 +424,24 @@ const EmployeeForm = () => {
     setError('');
     setSuccess('');
 
-    if (!validateForm()) {
-      setLoading(false);
-      return;
-    }
-
     try {
+      // Check if this is a new request
+      if (!location.state?.editMode) {
+        const limitCheck = await checkAndUpdateActionLimit(auth.currentUser.uid, 'create');
+        if (!limitCheck.allowed) {
+          setLimitWarningMessage('You have reached the maximum limit of 2 new requests in 24 hours.');
+          setShowLimitWarning(true);
+          setLoading(false);
+          return;
+        }
+        setRemainingCreates(limitCheck.remainingCount);
+      }
+
+      if (!validateForm()) {
+        setLoading(false);
+        return;
+      }
+
       // Check for existing request
       const existingRequestQuery = query(
         collection(db, 'transferRequests'),
@@ -536,6 +561,20 @@ const EmployeeForm = () => {
       {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
       {success && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">{success}</div>}
       
+      {/* Daily Limit Warning at the top */}
+      {!location.state?.editMode && (
+        <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+          <div className="flex items-center space-x-2">
+            <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm text-blue-600">
+              Daily Limit: You can create {remainingCreates} more transfer {remainingCreates === 1 ? 'request' : 'requests'} today.
+            </p>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Personal Information Section */}
         <div className="bg-indigo-50 p-4 rounded-lg mb-6">
@@ -901,6 +940,29 @@ const EmployeeForm = () => {
           </button>
         </div>
       </form>
+
+      {/* Limit Warning Modal */}
+      {showLimitWarning && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center mb-4">
+              <svg className="w-6 h-6 text-yellow-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <h3 className="text-lg font-semibold">Action Limit Reached</h3>
+            </div>
+            <p className="text-gray-600 mb-4">{limitWarningMessage}</p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowLimitWarning(false)}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Okay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

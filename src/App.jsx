@@ -1,15 +1,41 @@
 import React, { Suspense, useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { auth } from './firebase/config';
 import { onAuthStateChanged } from 'firebase/auth';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import SimpleSmoothUI from './pages/SimpleSmoothUI';
+import Auth from './pages/Auth';
+import AdminDashboard from './pages/AdminDashboard';
+import { useAuth } from './firebase/AuthProvider';
 
 // Lazy load components
 const Header = React.lazy(() => import('./components/Header'));
 const Sidebar = React.lazy(() => import('./components/Sidebar'));
 const AppRouter = React.lazy(() => import('./routes/Router'));
 const SimpleApp = React.lazy(() => import('./pages/SimpleDashboard'));
+
+// Admin Route Component with authentication check
+const AdminRoute = ({ children }) => {
+  const { currentUser, isAuthenticated, loading } = useAuth();
+  
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+  
+  if (!isAuthenticated || !currentUser) {
+    return <Navigate to="/" />;
+  }
+  
+  // Check if user is admin
+  const isAdmin = currentUser.email === 'indianrapidmutualtransfer@gmail.com';
+  
+  if (!isAdmin) {
+    return <Navigate to="/" />;
+  }
+  
+  return children;
+};
 
 function App() {
   const [authChecked, setAuthChecked] = useState(false);
@@ -153,7 +179,18 @@ function App() {
                 </div>
               }>
                 <div className="rounded-xl overflow-hidden bg-white shadow-md border border-gray-100">
-                  <AppRouter user={user} activeSection={activeSection} />
+                  <Routes>
+                    <Route path="/" element={<SimpleSmoothUI />} />
+                    <Route path="/auth" element={<Auth />} />
+                    <Route 
+                      path="/admin" 
+                      element={
+                        <AdminRoute>
+                          <AdminDashboard />
+                        </AdminRoute>
+                      } 
+                    />
+                  </Routes>
                 </div>
               </Suspense>
             </div>
